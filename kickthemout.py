@@ -142,22 +142,61 @@ def getDefaultInterface(returnNet=False):
         if (arg <= 0 or arg >= 0xFFFFFFFF):
             raise ValueError("illegal netmask value", hex(arg))
         return 32 - int(round(math.log(0xFFFFFFFF - arg, 2)))
-    def to_CIDR_notation(bytes_network, bytes_netmask):
-        network = scapy.utils.ltoa(bytes_network)
-        netmask = long2net(bytes_netmask)
-        net = "%s/%s" % (network, netmask)
-        if netmask < 16:
+    def to_CIDR_notation(network, netmask):
+        cidr = long2net(netmask)
+        net = "%s/%s" % (network, cidr)
+        if cidr < 16:
             return None
         return net
 
-    iface_routes = [route for route in scapy.config.conf.route.routes if route[3] == scapy.config.conf.iface and route[1] != 0xFFFFFFFF]
-    network, netmask, _, interface, address, _ = max(iface_routes, key=lambda item:item[1])
-    net = to_CIDR_notation(network, netmask)
-    if net:
-        if returnNet:
-            return net
-        else:
-            return interface
+    try:
+        import netifaces
+        
+        # Get the default gateway interface
+        default_gateway = netifaces.gateways()['default'][netifaces.AF_INET][1]
+        
+        # Get interface addresses
+        addrs = netifaces.ifaddresses(default_gateway)
+        
+        if netifaces.AF_INET in addrs:
+            for addr_info in addrs[netifaces.AF_INET]:
+                ip = addr_info['addr']
+                netmask = addr_info['netmask']
+                
+                # Convert netmask to integer
+                netmask_parts = [int(x) for x in netmask.split('.')]
+                netmask_int = (netmask_parts[0] << 24) + (netmask_parts[1] << 16) + (netmask_parts[2] << 8) + netmask_parts[3]
+                
+                # Calculate network address
+                addr_parts = [int(x) for x in ip.split('.')]
+                addr_int = (addr_parts[0] << 24) + (addr_parts[1] << 16) + (addr_parts[2] << 8) + addr_parts[3]
+                network_int = addr_int & netmask_int
+                
+                # Convert back to string
+                network = f"{(network_int >> 24) & 0xFF}.{(network_int >> 16) & 0xFF}.{(network_int >> 8) & 0xFF}.{network_int & 0xFF}"
+                
+                # Create CIDR notation
+                net = to_CIDR_notation(network, netmask_int)
+                
+                if net:
+                    if returnNet:
+                        return net
+                    else:
+                        return default_gateway
+        
+        # If no valid network found, raise exception
+        raise Exception("No valid IPv4 network found")
+        
+    except Exception as e:
+        # Fallback to original scapy method if netifaces fails
+        iface_routes = [route for route in scapy.config.conf.route.routes if route[3] == scapy.config.conf.iface and route[1] != 0xFFFFFFFF]
+        network, netmask, _, interface, address, _ = max(iface_routes, key=lambda item:item[1])
+        net = to_CIDR_notation(scapy.utils.ltoa(network), netmask)
+        if net:
+            if returnNet:
+                return net
+            else:
+                return interface
 
 
 

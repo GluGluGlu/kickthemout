@@ -11,6 +11,7 @@ import nmap
 
 # perform a network scan with nmap
 def scanNetwork(network):
+    print(f"Scanning network: {network}")
     returnlist = []
     nm = nmap.PortScanner()
     a = nm.scan(hosts=network, arguments='-sn')
